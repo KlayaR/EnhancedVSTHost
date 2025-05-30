@@ -1,0 +1,10 @@
+^C:\VSTPROJECTS\ENHANCEDVSTHOST\BUILD\CMAKEFILES\CAC05E5ADA7C353727BF7798BACAE780\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/VSTProjects/EnhancedVSTHost -BC:/VSTProjects/EnhancedVSTHost/build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/VSTProjects/EnhancedVSTHost/build/EnhancedVSTHost.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

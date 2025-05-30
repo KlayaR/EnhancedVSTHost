@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\VSTProjects\EnhancedVSTHost\build\CMakeFiles\cac05e5ada7c353727bf7798bacae780\INSTALL_force.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{FEF4F7BA-3C19-322F-B8F0-C02351ED4836}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

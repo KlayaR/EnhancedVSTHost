@@ -1,0 +1,12 @@
+prefix=C:/Program Files/EnhancedVSTHost
+exec_prefix=\${prefix}
+libdir=C:/Program Files/EnhancedVSTHost/lib
+includedir=C:/Program Files/EnhancedVSTHost/include
+
+Name: EnhancedVSTHost
+Description: A VST host with extra enhancement features
+Version: 1.0.0
+# List any pkg-config dependencies here, e.g.:
+# Requires: libsndfile >= 1.0.20, gtk+-3.0
+Libs: -L\${libdir} -lEnhancedVSTHost
+Cflags: -I\${includedir}

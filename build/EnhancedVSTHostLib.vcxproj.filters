@@ -1,0 +1,36 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\VSTProjects\EnhancedVSTHost\src\EnhancedVSTHost.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\VSTProjects\EnhancedVSTHost\src\PluginScanner.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\VSTProjects\EnhancedVSTHost\src\AudioEngines.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\VSTProjects\EnhancedVSTHost\src\PluginInstance.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\VSTProjects\EnhancedVSTHost\src\HelperComponents.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="C:\VSTProjects\EnhancedVSTHost\include\EnhancedVSTHost.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\VSTProjects\EnhancedVSTHost\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{C6BD4425-6570-3F6D-AC36-1DE92837FF27}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{51038A1C-8968-3090-B6F6-A922BF86841D}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

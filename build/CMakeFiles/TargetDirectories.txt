@@ -1,0 +1,6 @@
+C:/VSTProjects/EnhancedVSTHost/build/CMakeFiles/EnhancedVSTHostLib.dir
+C:/VSTProjects/EnhancedVSTHost/build/CMakeFiles/VSTScanner.dir
+C:/VSTProjects/EnhancedVSTHost/build/CMakeFiles/VSTHostExample.dir
+C:/VSTProjects/EnhancedVSTHost/build/CMakeFiles/INSTALL.dir
+C:/VSTProjects/EnhancedVSTHost/build/CMakeFiles/ALL_BUILD.dir
+C:/VSTProjects/EnhancedVSTHost/build/CMakeFiles/ZERO_CHECK.dir
