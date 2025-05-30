@@ -27,7 +27,6 @@ set(ASIO_SDK_PATH "C:/SDKs/asiosdk" CACHE PATH "Path to ASIO SDK")
 # Include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${VST2_SDK_PATH}
     ${VST3_SDK_PATH}
 )
 
@@ -118,12 +117,6 @@ install(TARGETS EnhancedVSTHostLib VSTScanner VSTHostExample
 
 install(FILES ${HEADERS} DESTINATION include)
 
-# Copy VST2 SDK files if needed
-if(EXISTS ${VST2_SDK_PATH})
-    install(DIRECTORY ${VST2_SDK_PATH}/pluginterfaces
-        DESTINATION include/vst2sdk
-    )
-endif()
 
 # Create manifest file for High DPI support
 file(WRITE "${CMAKE_CURRENT_SOURCE_DIR}/manifest.xml" 

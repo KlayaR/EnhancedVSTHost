@@ -20,7 +20,6 @@
 #include <audiopolicy.h>
 
 // VST SDK includes
-#include "pluginterfaces/vst2.x/aeffectx.h"
 #include "public.sdk/source/vst/vst3sdk/pluginterfaces/base/ipluginbase.h"
 #include "public.sdk/source/vst/vst3sdk/pluginterfaces/vst/ivstcomponent.h"
 #include "public.sdk/source/vst/vst3sdk/pluginterfaces/vst/ivstaudioprocessor.h"
@@ -46,7 +45,6 @@ namespace EVH {
     
     // Plugin types
     enum class PluginType {
-        VST2,
         VST3,
         Unknown
     };
@@ -358,10 +356,7 @@ private:
     EVH::PluginInfo info;
     std::atomic<EVH::PluginState> state{EVH::PluginState::Unloaded};
     bool bypassed{false};
-    
-    // VST2 specific
-    HMODULE moduleHandle{nullptr};
-    AEffect* effect{nullptr};
+
     
     // VST3 specific
     Steinberg::IPtr<Steinberg::Vst::IComponent> component;
@@ -374,7 +369,6 @@ private:
     mutable std::mutex processMutex;
     
     // Helper methods
-    bool loadVST2();
     bool loadVST3();
     static intptr_t VSTCALLBACK hostCallback(AEffect* effect, int32_t opcode, 
                                              int32_t index, intptr_t value, 
