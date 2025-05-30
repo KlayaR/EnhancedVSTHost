@@ -194,6 +194,12 @@ EnhancedVSTHost_IS_TOP_LEVEL:STATIC=ON
 //Value Computed by CMake
 EnhancedVSTHost_SOURCE_DIR:STATIC=C:/VSTProjects/EnhancedVSTHost
 
+//Path to a file.
+VST3_PI_FOLDER:PATH=C:/SDKs/vst3sdk/pluginterfaces
+
+//Path to a file.
+VST3_PUBLIC_SDK_FOLDER:PATH=VST3_PUBLIC_SDK_FOLDER-NOTFOUND
+
 //Path to VST3 SDK
 VST3_SDK_PATH:PATH=C:/SDKs/vst3sdk
 

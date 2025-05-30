@@ -20,9 +20,36 @@
 #include <audiopolicy.h>
 
 // VST SDK includes
-#include "public.sdk/source/vst/vst3sdk/pluginterfaces/base/ipluginbase.h"
+#include <pluginterfaces/base/ipluginbase.h>
 #include "public.sdk/source/vst/vst3sdk/pluginterfaces/vst/ivstcomponent.h"
 #include "public.sdk/source/vst/vst3sdk/pluginterfaces/vst/ivstaudioprocessor.h"
+
+// C++ Standard
+#include <cstdint>
+#include <functional>
+#include <unordered_set>
+#include <fstream>
+#include <memory>
+#include <mutex>
+#include <thread>
+
+// Windows / COM smart‐pointer helper
+#include <wrl/client.h>     // for Microsoft::WRL::ComPtr
+using Microsoft::WRL::ComPtr;
+
+// VST3 SDK (after include paths are set up in CMake)
+#include "pluginterfaces/base/ipluginbase.h"
+#include "public.sdk/source/vst/vsttypes.h"
+// …any other VST3 headers you need…
+
+// ASIO (if supported)
+#ifdef ASIO_SUPPORT
+#include "asio.h"
+#endif
+
+namespace EnhancedVSTHost {
+  // your class declarations that use std::function, ComPtr, etc.
+}
 
 // Forward declarations
 class PluginScanner;
