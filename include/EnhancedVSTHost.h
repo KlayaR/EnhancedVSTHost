@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <atomic>
 #include <thread>
 #include <mutex>
@@ -13,50 +14,19 @@
 #include <queue>
 #include <exception>
 #include <filesystem>
+#include <functional>
 
 // Audio APIs
 #include <mmdeviceapi.h>
 #include <audioclient.h>
 #include <audiopolicy.h>
-
-// VST SDK includes
-#include <pluginterfaces/base/ipluginbase.h>
-#include "public.sdk/source/vst/vst3sdk/pluginterfaces/vst/ivstcomponent.h"
-#include "public.sdk/source/vst/vst3sdk/pluginterfaces/vst/ivstaudioprocessor.h"
-
-// C++ Standard
-#include <cstdint>
-#include <functional>
-#include <unordered_set>
-#include <fstream>
-#include <memory>
-#include <mutex>
-#include <thread>
-
-// Windows / COM smart‐pointer helper
-#include <wrl/client.h>     // for Microsoft::WRL::ComPtr
-using Microsoft::WRL::ComPtr;
-
-// VST3 SDK (after include paths are set up in CMake)
-#include "pluginterfaces/base/ipluginbase.h"
-#include "public.sdk/source/vst/vsttypes.h"
-// …any other VST3 headers you need…
-
-// ASIO (if supported)
-#ifdef ASIO_SUPPORT
-#include "asio.h"
-#endif
-
-namespace EnhancedVSTHost {
-  // your class declarations that use std::function, ComPtr, etc.
-}
+#include <wrl/client.h>
 
 // Forward declarations
 class PluginScanner;
 class AudioEngine;
 class PluginHost;
 class PluginInstance;
-class ASIODriver;
 class WASAPIEngine;
 class PluginBridge32;
 class NotificationManager;
@@ -73,12 +43,12 @@ namespace EVH {
     // Plugin types
     enum class PluginType {
         VST3,
+        VST2,    // Legacy support
         Unknown
     };
     
     // Audio driver types
     enum class AudioDriverType {
-        ASIO,
         WASAPI,
         DirectSound,
         Unknown
@@ -116,14 +86,36 @@ namespace EVH {
     template<typename T>
     class AudioBuffer {
     public:
-        AudioBuffer(int channels, int samples);
-        ~AudioBuffer();
+        AudioBuffer(int channels, int samples)
+            : numChannels(channels), numSamples(samples) {
+            
+            channelData.resize(channels);
+            writePointers.resize(channels);
+            
+            for (int ch = 0; ch < channels; ++ch) {
+                channelData[ch].resize(samples);
+                writePointers[ch] = channelData[ch].data();
+            }
+        }
+        
+        ~AudioBuffer() = default;
         
         T** getWritePointer() { return writePointers.data(); }
         const T** getReadPointer() const { return const_cast<const T**>(writePointers.data()); }
         
-        void clear();
-        void applyGain(float gain);
+        void clear() {
+            for (auto& channel : channelData) {
+                std::fill(channel.begin(), channel.end(), T(0));
+            }
+        }
+        
+        void applyGain(float gain) {
+            for (auto& channel : channelData) {
+                for (auto& sample : channel) {
+                    sample *= gain;
+                }
+            }
+        }
         
     private:
         std::vector<std::vector<T>> channelData;
@@ -296,29 +288,6 @@ protected:
     int bufferSize;
 };
 
-// ASIO implementation
-class ASIOEngine : public AudioEngine {
-public:
-    ASIOEngine();
-    ~ASIOEngine() override;
-    
-    bool initialize(double sampleRate, int bufferSize) override;
-    void shutdown() override;
-    bool start() override;
-    void stop() override;
-    
-    std::vector<std::wstring> getDeviceList() const override;
-    bool selectDevice(const std::wstring& deviceName) override;
-    
-private:
-    std::unique_ptr<ASIODriver> driver;
-    bool isRunning{false};
-    
-    static long asioMessages(long selector, long value, void* message, double* opt);
-    static void bufferSwitch(long index, long processNow);
-    static void bufferSwitchTimeInfo(ASIOTime* timeInfo, long index, long processNow);
-};
-
 // WASAPI implementation
 class WASAPIEngine : public AudioEngine {
 public:
@@ -383,11 +352,13 @@ private:
     EVH::PluginInfo info;
     std::atomic<EVH::PluginState> state{EVH::PluginState::Unloaded};
     bool bypassed{false};
-
+    
+    // Module handle
+    HMODULE moduleHandle{nullptr};
     
     // VST3 specific
-    Steinberg::IPtr<Steinberg::Vst::IComponent> component;
-    Steinberg::IPtr<Steinberg::Vst::IAudioProcessor> processor;
+    void* component{nullptr};  // Would be Steinberg::IPtr<Steinberg::Vst::IComponent>
+    void* processor{nullptr};  // Would be Steinberg::IPtr<Steinberg::Vst::IAudioProcessor>
     
     // Editor
     HWND editorWindow{nullptr};
@@ -397,9 +368,6 @@ private:
     
     // Helper methods
     bool loadVST3();
-    static intptr_t VSTCALLBACK hostCallback(AEffect* effect, int32_t opcode, 
-                                             int32_t index, intptr_t value, 
-                                             void* ptr, float opt);
 };
 
 // 32-bit plugin bridge
@@ -463,7 +431,7 @@ private:
     std::wstring logFilePath;
     mutable std::mutex logMutex;
     std::queue<std::wstring> recentErrors;
-    std::ofstream logFile;
+    std::wofstream logFile;
     
     std::wstring getCurrentTimestamp() const;
 };

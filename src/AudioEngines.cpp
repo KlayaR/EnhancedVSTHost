@@ -1,4 +1,4 @@
-// AudioEngines.cpp - ASIO and WASAPI implementations
+// AudioEngines.cpp - WASAPI implementation
 #include "EnhancedVSTHost.h"
 #include <mmdeviceapi.h>
 #include <audioclient.h>
@@ -7,13 +7,6 @@
 #include <algorithm>
 
 #pragma comment(lib, "avrt.lib")
-
-// ASIO SDK would need to be included separately
-// #include "asio.h"
-// #include "asiodrivers.h"
-
-// For this example, I'll provide the WASAPI implementation in detail
-// and a skeleton for ASIO
 
 // WASAPI Engine Implementation
 WASAPIEngine::WASAPIEngine() {
@@ -53,7 +46,7 @@ bool WASAPIEngine::initialize(double sampleRate, int bufferSize) {
     }
     
     // Get mix format
-    WAVEFORMATEX* pWaveformat;
+    WAVEFORMATEX* pWaveformat = nullptr;
     hr = audioClient->GetMixFormat(&pWaveformat);
     if (FAILED(hr)) {
         return false;
@@ -89,18 +82,14 @@ bool WASAPIEngine::initialize(double sampleRate, int bufferSize) {
     
     if (FAILED(hr)) {
         // Try with the mix format if our format failed
-        CoTaskMemFree(pWaveformat);
-        hr = audioClient->GetMixFormat(&pWaveformat);
-        if (SUCCEEDED(hr)) {
-            hr = audioClient->Initialize(
-                AUDCLNT_SHAREMODE_SHARED,
-                AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST,
-                requestedDuration,
-                0,
-                pWaveformat,
-                nullptr
-            );
-        }
+        hr = audioClient->Initialize(
+            AUDCLNT_SHAREMODE_SHARED,
+            AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST,
+            requestedDuration,
+            0,
+            pWaveformat,
+            nullptr
+        );
     }
     
     CoTaskMemFree(pWaveformat);
@@ -117,12 +106,16 @@ bool WASAPIEngine::initialize(double sampleRate, int bufferSize) {
     
     hr = audioClient->SetEventHandle(bufferEvent);
     if (FAILED(hr)) {
+        CloseHandle(bufferEvent);
+        bufferEvent = nullptr;
         return false;
     }
     
     // Get render client
     hr = audioClient->GetService(__uuidof(IAudioRenderClient), (void**)&renderClient);
     if (FAILED(hr)) {
+        CloseHandle(bufferEvent);
+        bufferEvent = nullptr;
         return false;
     }
     
@@ -130,6 +123,8 @@ bool WASAPIEngine::initialize(double sampleRate, int bufferSize) {
     UINT32 bufferFrameCount;
     hr = audioClient->GetBufferSize(&bufferFrameCount);
     if (FAILED(hr)) {
+        CloseHandle(bufferEvent);
+        bufferEvent = nullptr;
         return false;
     }
     
@@ -199,30 +194,32 @@ std::vector<std::wstring> WASAPIEngine::getDeviceList() const {
     
     if (SUCCEEDED(hr)) {
         UINT count;
-        pCollection->GetCount(&count);
+        hr = pCollection->GetCount(&count);
         
-        for (UINT i = 0; i < count; i++) {
-            IMMDevice* pDevice = nullptr;
-            hr = pCollection->Item(i, &pDevice);
-            
-            if (SUCCEEDED(hr)) {
-                IPropertyStore* pProps = nullptr;
-                hr = pDevice->OpenPropertyStore(STGM_READ, &pProps);
+        if (SUCCEEDED(hr)) {
+            for (UINT i = 0; i < count; i++) {
+                IMMDevice* pDevice = nullptr;
+                hr = pCollection->Item(i, &pDevice);
                 
                 if (SUCCEEDED(hr)) {
-                    PROPVARIANT varName;
-                    PropVariantInit(&varName);
+                    IPropertyStore* pProps = nullptr;
+                    hr = pDevice->OpenPropertyStore(STGM_READ, &pProps);
                     
-                    hr = pProps->GetValue(PKEY_Device_FriendlyName, &varName);
                     if (SUCCEEDED(hr)) {
-                        devices.push_back(varName.pwszVal);
-                        PropVariantClear(&varName);
+                        PROPVARIANT varName;
+                        PropVariantInit(&varName);
+                        
+                        hr = pProps->GetValue(PKEY_Device_FriendlyName, &varName);
+                        if (SUCCEEDED(hr) && varName.vt == VT_LPWSTR) {
+                            devices.push_back(varName.pwszVal);
+                            PropVariantClear(&varName);
+                        }
+                        
+                        pProps->Release();
                     }
                     
-                    pProps->Release();
+                    pDevice->Release();
                 }
-                
-                pDevice->Release();
             }
         }
         
@@ -233,9 +230,76 @@ std::vector<std::wstring> WASAPIEngine::getDeviceList() const {
 }
 
 bool WASAPIEngine::selectDevice(const std::wstring& deviceName) {
-    // Implementation would enumerate devices and select the matching one
-    // For brevity, returning true
-    return true;
+    if (!deviceEnumerator) {
+        return false;
+    }
+    
+    // Stop current audio if running
+    bool wasRunning = (audioClient != nullptr);
+    if (wasRunning) {
+        stop();
+    }
+    
+    // Find and select the device
+    IMMDeviceCollection* pCollection = nullptr;
+    HRESULT hr = deviceEnumerator->EnumAudioEndpoints(
+        eRender, DEVICE_STATE_ACTIVE, &pCollection
+    );
+    
+    if (SUCCEEDED(hr)) {
+        UINT count;
+        hr = pCollection->GetCount(&count);
+        
+        if (SUCCEEDED(hr)) {
+            for (UINT i = 0; i < count; i++) {
+                IMMDevice* pDevice = nullptr;
+                hr = pCollection->Item(i, &pDevice);
+                
+                if (SUCCEEDED(hr)) {
+                    IPropertyStore* pProps = nullptr;
+                    hr = pDevice->OpenPropertyStore(STGM_READ, &pProps);
+                    
+                    if (SUCCEEDED(hr)) {
+                        PROPVARIANT varName;
+                        PropVariantInit(&varName);
+                        
+                        hr = pProps->GetValue(PKEY_Device_FriendlyName, &varName);
+                        if (SUCCEEDED(hr) && varName.vt == VT_LPWSTR) {
+                            if (deviceName == varName.pwszVal) {
+                                // Found the device
+                                audioDevice.Reset();
+                                audioDevice = pDevice;
+                                pDevice = nullptr;  // Don't release since we're keeping it
+                                
+                                PropVariantClear(&varName);
+                                pProps->Release();
+                                
+                                // Re-initialize with new device
+                                if (wasRunning) {
+                                    initialize(sampleRate, bufferSize);
+                                    start();
+                                }
+                                
+                                pCollection->Release();
+                                return true;
+                            }
+                            PropVariantClear(&varName);
+                        }
+                        
+                        pProps->Release();
+                    }
+                    
+                    if (pDevice) {
+                        pDevice->Release();
+                    }
+                }
+            }
+        }
+        
+        pCollection->Release();
+    }
+    
+    return false;
 }
 
 void WASAPIEngine::audioThreadFunc() {
@@ -265,7 +329,10 @@ void WASAPIEngine::audioThreadFunc() {
         // Wait for buffer event
         DWORD waitResult = WaitForSingleObject(bufferEvent, 2000);
         if (waitResult != WAIT_OBJECT_0) {
-            continue;
+            if (waitResult == WAIT_TIMEOUT) {
+                continue;
+            }
+            break;  // Error occurred
         }
         
         // Get buffer
@@ -309,104 +376,10 @@ void WASAPIEngine::audioThreadFunc() {
         }
         
         // Release buffer
-        renderClient->ReleaseBuffer(numFramesToWrite, 0);
+        hr = renderClient->ReleaseBuffer(numFramesToWrite, 0);
     }
     
     if (hTask) {
         AvRevertMmThreadCharacteristics(hTask);
     }
 }
-
-// ASIO Engine skeleton implementation
-ASIOEngine::ASIOEngine() {
-}
-
-ASIOEngine::~ASIOEngine() {
-    shutdown();
-}
-
-bool ASIOEngine::initialize(double sampleRate, int bufferSize) {
-    this->sampleRate = sampleRate;
-    this->bufferSize = bufferSize;
-    
-    // ASIO initialization would go here
-    // This requires the ASIO SDK
-    
-    return false; // Placeholder
-}
-
-void ASIOEngine::shutdown() {
-    stop();
-    // ASIO cleanup
-}
-
-bool ASIOEngine::start() {
-    // Start ASIO
-    return false; // Placeholder
-}
-
-void ASIOEngine::stop() {
-    // Stop ASIO
-}
-
-std::vector<std::wstring> ASIOEngine::getDeviceList() const {
-    std::vector<std::wstring> devices;
-    // Enumerate ASIO drivers
-    return devices;
-}
-
-bool ASIOEngine::selectDevice(const std::wstring& deviceName) {
-    // Select ASIO driver
-    return false; // Placeholder
-}
-
-long ASIOEngine::asioMessages(long selector, long value, void* message, double* opt) {
-    // Handle ASIO messages
-    return 0;
-}
-
-void ASIOEngine::bufferSwitch(long index, long processNow) {
-    // Handle buffer switch
-}
-
-void ASIOEngine::bufferSwitchTimeInfo(ASIOTime* timeInfo, long index, long processNow) {
-    // Handle buffer switch with time info
-}
-
-// Audio Buffer Implementation
-template<typename T>
-AudioBuffer<T>::AudioBuffer(int channels, int samples) 
-    : numChannels(channels), numSamples(samples) {
-    
-    channelData.resize(channels);
-    writePointers.resize(channels);
-    
-    for (int ch = 0; ch < channels; ++ch) {
-        channelData[ch].resize(samples);
-        writePointers[ch] = channelData[ch].data();
-    }
-}
-
-template<typename T>
-AudioBuffer<T>::~AudioBuffer() {
-}
-
-template<typename T>
-void AudioBuffer<T>::clear() {
-    for (auto& channel : channelData) {
-        std::fill(channel.begin(), channel.end(), T(0));
-    }
-}
-
-template<typename T>
-void AudioBuffer<T>::applyGain(float gain) {
-    for (auto& channel : channelData) {
-        for (auto& sample : channel) {
-            sample *= gain;
-        }
-    }
-}
-
-// Explicit instantiations
-template class AudioBuffer<float>;
-template class AudioBuffer<double>;

@@ -1,20 +1,17 @@
 // HelperComponents.cpp - 32-bit bridge, notifications, and error logging
 #include "EnhancedVSTHost.h"
 #include <windows.h>
-#include <shobjidl.h>
-#include <wrl/client.h>
-#include <wrl/implements.h>
+#include <shellapi.h>
 #include <shlobj.h>
-#include <propkey.h>
-#include <functiondiscoverykeys_devpkey.h>
-#include <NotificationActivationCallback.h>
+#include <wrl/client.h>
+#include <VersionHelpers.h>
 #include <ctime>
 #include <iomanip>
 #include <fstream>
 #include <sstream>
 
 #pragma comment(lib, "shlwapi.lib")
-#pragma comment(lib, "runtimeobject.lib")
+#pragma comment(lib, "shell32.lib")
 
 using namespace Microsoft::WRL;
 
@@ -27,6 +24,12 @@ PluginBridge32::~PluginBridge32() {
 }
 
 bool PluginBridge32::initialize() {
+    // Check if 32-bit bridge process exists
+    if (!PathFileExistsW(L"VSTBridge32.exe")) {
+        // 32-bit bridge not available
+        return false;
+    }
+    
     // Create bridge process
     SECURITY_ATTRIBUTES sa = { sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
     
@@ -93,8 +96,13 @@ bool PluginBridge32::initialize() {
 void PluginBridge32::shutdown() {
     if (bridgeProcess != nullptr) {
         sendCommand("EXIT");
-        WaitForSingleObject(bridgeProcess, 5000);
-        TerminateProcess(bridgeProcess, 0);
+        
+        // Wait for process to exit gracefully
+        if (WaitForSingleObject(bridgeProcess, 5000) == WAIT_TIMEOUT) {
+            // Force termination
+            TerminateProcess(bridgeProcess, 0);
+        }
+        
         CloseHandle(bridgeProcess);
         bridgeProcess = nullptr;
     }
@@ -154,6 +162,12 @@ void PluginBridge32::process32(const std::wstring& pluginPath,
     
     // This would send audio data to the 32-bit process for processing
     // Implementation would involve shared memory or pipe-based audio transfer
+    // For now, just pass through
+    for (int ch = 0; ch < 2; ++ch) {
+        if (inputs && inputs[ch] && outputs && outputs[ch]) {
+            std::copy_n(inputs[ch], numSamples, outputs[ch]);
+        }
+    }
 }
 
 bool PluginBridge32::sendCommand(const std::string& cmd) {
@@ -207,7 +221,7 @@ NotificationManager::~NotificationManager() {
 void NotificationManager::showNotification(const std::wstring& title, const std::wstring& message) {
     if (useToastNotifications) {
         // Use Windows 10/11 toast notifications
-        // This requires Windows Runtime and would need additional setup
+        // This requires Windows Runtime and additional setup
         // For now, fall back to legacy
     }
     
@@ -235,13 +249,22 @@ void NotificationManager::showLegacyNotification(const std::wstring& title, cons
     NOTIFYICONDATAW nid = { sizeof(NOTIFYICONDATAW) };
     nid.hWnd = parentWindow ? parentWindow : GetDesktopWindow();
     nid.uID = 1;
-    nid.uFlags = NIF_INFO;
+    nid.uFlags = NIF_INFO | NIF_ICON;
+    nid.hIcon = LoadIcon(nullptr, IDI_WARNING);
     nid.dwInfoFlags = NIIF_WARNING;
     
     wcscpy_s(nid.szInfoTitle, title.substr(0, 63).c_str());
     wcscpy_s(nid.szInfo, message.substr(0, 255).c_str());
     
+    // Add the icon first time
+    Shell_NotifyIconW(NIM_ADD, &nid);
+    
+    // Update with notification
     Shell_NotifyIconW(NIM_MODIFY, &nid);
+    
+    // Remove after a delay (in production, would handle this better)
+    Sleep(5000);
+    Shell_NotifyIconW(NIM_DELETE, &nid);
 }
 
 // Error Logger Implementation
@@ -253,6 +276,7 @@ ErrorLogger::ErrorLogger(const std::wstring& logPath)
     
     if (logFile.is_open()) {
         logFile << L"\n=== VST Host Started " << getCurrentTimestamp() << L" ===\n";
+        logFile.flush();
     }
 }
 
@@ -270,7 +294,7 @@ void ErrorLogger::logError(const std::wstring& error) {
     
     // Add to recent errors
     recentErrors.push(timestampedError);
-    if (recentErrors.size() > 1000) {
+    while (recentErrors.size() > 1000) {
         recentErrors.pop();
     }
     
@@ -291,4 +315,60 @@ void ErrorLogger::logAudioError(const std::wstring& error) {
     logError(audioError);
 }
 
-std::vector
+std::vector<std::wstring> ErrorLogger::getRecentErrors(int count) const {
+    std::lock_guard<std::mutex> lock(logMutex);
+    
+    std::vector<std::wstring> errors;
+    
+    // Create a copy of the queue to iterate
+    std::queue<std::wstring> tempQueue = recentErrors;
+    
+    // Skip older entries if we have more than requested
+    int toSkip = static_cast<int>(tempQueue.size()) - count;
+    while (toSkip > 0 && !tempQueue.empty()) {
+        tempQueue.pop();
+        toSkip--;
+    }
+    
+    // Collect the requested number of errors
+    while (!tempQueue.empty() && errors.size() < static_cast<size_t>(count)) {
+        errors.push_back(tempQueue.front());
+        tempQueue.pop();
+    }
+    
+    return errors;
+}
+
+void ErrorLogger::clearLog() {
+    std::lock_guard<std::mutex> lock(logMutex);
+    
+    // Clear recent errors
+    while (!recentErrors.empty()) {
+        recentErrors.pop();
+    }
+    
+    // Clear log file
+    if (logFile.is_open()) {
+        logFile.close();
+    }
+    
+    // Reopen in truncate mode
+    logFile.open(logFilePath, std::ios::trunc | std::ios::out);
+    if (logFile.is_open()) {
+        logFile << L"=== Log Cleared " << getCurrentTimestamp() << L" ===\n";
+        logFile.flush();
+    }
+}
+
+std::wstring ErrorLogger::getCurrentTimestamp() const {
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    
+    struct tm timeinfo;
+    localtime_s(&timeinfo, &time_t);
+    
+    std::wstringstream ss;
+    ss << std::put_time(&timeinfo, L"%Y-%m-%d %H:%M:%S");
+    
+    return ss.str();
+}

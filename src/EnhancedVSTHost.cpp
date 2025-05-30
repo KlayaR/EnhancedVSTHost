@@ -62,7 +62,7 @@ bool EnhancedVSTHost::initialize(HWND parentWindow) {
     
     // Initialize COM for WASAPI
     HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    if (FAILED(hr)) {
+    if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
         logError(L"Failed to initialize COM");
         return false;
     }
@@ -70,6 +70,7 @@ bool EnhancedVSTHost::initialize(HWND parentWindow) {
     // Initialize 32-bit bridge
     if (!bridge32->initialize()) {
         logError(L"Failed to initialize 32-bit plugin bridge");
+        // Don't fail completely, just disable 32-bit support
     }
     
     // Load blacklist from file
@@ -81,6 +82,7 @@ bool EnhancedVSTHost::initialize(HWND parentWindow) {
                 blacklistedPlugins.insert(line);
             }
         }
+        blacklistFile.close();
     }
     
     return true;
@@ -104,6 +106,7 @@ void EnhancedVSTHost::shutdown() {
         for (const auto& plugin : blacklistedPlugins) {
             blacklistFile << plugin << L"\n";
         }
+        blacklistFile.close();
     }
     
     CoUninitialize();
@@ -226,18 +229,14 @@ bool EnhancedVSTHost::startAudio(AudioDriverType driverType) {
         return true;
     }
     
-    // Create appropriate audio engine
-    switch (driverType) {
-        case AudioDriverType::ASIO:
-            audioEngine = std::make_unique<ASIOEngine>();
-            break;
-        case AudioDriverType::WASAPI:
-            audioEngine = std::make_unique<WASAPIEngine>();
-            break;
-        default:
-            logError(L"Unsupported audio driver type");
-            return false;
+    // For now, only support WASAPI
+    if (driverType != AudioDriverType::WASAPI) {
+        logError(L"Only WASAPI audio driver is currently supported");
+        return false;
     }
+    
+    // Create audio engine
+    audioEngine = std::make_unique<WASAPIEngine>();
     
     // Initialize audio engine
     if (!audioEngine->initialize(currentSampleRate, currentBufferSize)) {
@@ -256,13 +255,20 @@ bool EnhancedVSTHost::startAudio(AudioDriverType driverType) {
             std::fill_n(outputs[ch], numSamples, 0.0f);
         }
         
+        // Copy input to output for now (pass-through)
+        for (int ch = 0; ch < 2; ++ch) {
+            if (inputs && inputs[ch]) {
+                std::copy_n(inputs[ch], numSamples, outputs[ch]);
+            }
+        }
+        
         // Process through each plugin in chain
         for (int pluginId : pluginChain) {
             auto it = loadedPlugins.find(pluginId);
             if (it != loadedPlugins.end() && !it->second->isBypassed()) {
                 try {
                     it->second->processReplacing(
-                        const_cast<float**>(inputs), 
+                        const_cast<float**>(outputs),  // Use output as input for chain
                         outputs, 
                         numSamples
                     );
@@ -303,7 +309,10 @@ void EnhancedVSTHost::addPluginToChain(int pluginId) {
     std::lock_guard<std::mutex> lock(pluginMutex);
     
     if (loadedPlugins.find(pluginId) != loadedPlugins.end()) {
-        pluginChain.push_back(pluginId);
+        // Check if already in chain
+        if (std::find(pluginChain.begin(), pluginChain.end(), pluginId) == pluginChain.end()) {
+            pluginChain.push_back(pluginId);
+        }
     }
 }
 
@@ -323,7 +332,7 @@ void EnhancedVSTHost::movePluginInChain(int pluginId, int newPosition) {
     if (it != pluginChain.end()) {
         pluginChain.erase(it);
         
-        if (newPosition >= 0 && newPosition <= pluginChain.size()) {
+        if (newPosition >= 0 && newPosition <= static_cast<int>(pluginChain.size())) {
             pluginChain.insert(pluginChain.begin() + newPosition, pluginId);
         } else {
             pluginChain.push_back(pluginId);
@@ -385,7 +394,7 @@ void EnhancedVSTHost::clearErrors() {
 
 void EnhancedVSTHost::setupHighDPI() {
     if (IsWindows8Point1OrGreater()) {
-        // Note: SetProcessDpiAwareness would need to be declared or use SetProcessDPIAware
+        // SetProcessDpiAwareness would be better but requires Windows 8.1 SDK
         SetProcessDPIAware();
         highDpiAware = true;
     } else {
@@ -406,16 +415,6 @@ void EnhancedVSTHost::handlePluginCrash(int pluginId) {
         
         // Remove from chain
         removePluginFromChain(pluginId);
-        
-        // Try to unload the plugin
-        try {
-            it->second->unload();
-        } catch (...) {
-            // Ignore exceptions
-        }
-        
-        // Mark as crashed
-        loadedPlugins.erase(it);
         
         // Call crash callback
         if (crashCb) {
@@ -438,8 +437,9 @@ bool EnhancedVSTHost::validatePlugin(const std::wstring& path) {
         return false;
     }
     
-    // Check if it's a DLL
+    // Check if it's a DLL or VST3
     std::wstring ext = PathFindExtensionW(path.c_str());
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
     if (ext != L".dll" && ext != L".vst3") {
         return false;
     }
@@ -461,7 +461,7 @@ std::unique_ptr<PluginInstance> EnhancedVSTHost::createPluginInstance(const Plug
 }
 
 std::vector<EVH::PluginInfo> EnhancedVSTHost::getAvailablePlugins() const {
-    // This would return the list of scanned plugins
+    // This would return the list of scanned plugins from a database
     // For now, return empty vector
     return std::vector<EVH::PluginInfo>();
 }
