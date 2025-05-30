@@ -14,11 +14,11 @@
 # EXTERNAL cache entries
 ########################
 
-//Path to ASIO SDK
+//Root of your ASIO SDK (optional)
 ASIO_SDK_PATH:PATH=C:/SDKs/asiosdk
 
 //Path to a program.
-CMAKE_AR:FILEPATH=C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/lib.exe
+CMAKE_AR:FILEPATH=C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/lib.exe
 
 //Semicolon separated list of supported configuration types, only
 // supports Debug, Release, MinSizeRel, and RelWithDebInfo, anything
@@ -65,7 +65,7 @@ CMAKE_FIND_PACKAGE_REDIRECTS_DIR:STATIC=C:/VSTProjects/EnhancedVSTHost/build/CMa
 CMAKE_INSTALL_PREFIX:PATH=C:/Program Files/EnhancedVSTHost
 
 //Path to a program.
-CMAKE_LINKER:FILEPATH=C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/link.exe
+CMAKE_LINKER:FILEPATH=C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/link.exe
 
 //Flags used by the linker during the creation of modules during
 // all build types.
@@ -194,13 +194,7 @@ EnhancedVSTHost_IS_TOP_LEVEL:STATIC=ON
 //Value Computed by CMake
 EnhancedVSTHost_SOURCE_DIR:STATIC=C:/VSTProjects/EnhancedVSTHost
 
-//Path to a file.
-VST3_PI_FOLDER:PATH=C:/SDKs/vst3sdk/pluginterfaces
-
-//Path to a file.
-VST3_PUBLIC_SDK_FOLDER:PATH=VST3_PUBLIC_SDK_FOLDER-NOTFOUND
-
-//Path to VST3 SDK
+//Root of your VST3 SDK clone
 VST3_SDK_PATH:PATH=C:/SDKs/vst3sdk
 
 
@@ -253,7 +247,7 @@ CMAKE_EXTRA_GENERATOR:INTERNAL=
 //Name of generator.
 CMAKE_GENERATOR:INTERNAL=Visual Studio 17 2022
 //Generator instance identifier.
-CMAKE_GENERATOR_INSTANCE:INTERNAL=C:/Program Files/Microsoft Visual Studio/2022/Community
+CMAKE_GENERATOR_INSTANCE:INTERNAL=C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools
 //Name of generator platform.
 CMAKE_GENERATOR_PLATFORM:INTERNAL=x64
 //Name of generator toolset.
