@@ -2,6 +2,7 @@
 #include "EnhancedVSTHost.h"
 #include <windows.h>
 #include <commctrl.h>
+#include <shlobj.h>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -270,7 +271,6 @@ void CreateControls(HWND hwnd) {
     );
     
     SendMessageW(hDriverCombo, CB_ADDSTRING, 0, (LPARAM)L"WASAPI");
-    SendMessageW(hDriverCombo, CB_ADDSTRING, 0, (LPARAM)L"ASIO");
     SendMessageW(hDriverCombo, CB_SETCURSEL, 0, 0);
     
     // Plugin list
@@ -334,18 +334,21 @@ void OnScanPlugins() {
     // Get VST plugin paths
     std::vector<std::wstring> searchPaths;
     
-    // Common VST2 paths
+    // Common VST3 paths
     wchar_t programFiles[MAX_PATH];
     if (SHGetFolderPathW(nullptr, CSIDL_PROGRAM_FILES, nullptr, 0, programFiles) == S_OK) {
-        searchPaths.push_back(std::wstring(programFiles) + L"\\VSTPlugins");
-        searchPaths.push_back(std::wstring(programFiles) + L"\\Steinberg\\VSTPlugins");
-        searchPaths.push_back(std::wstring(programFiles) + L"\\Common Files\\VST2");
+        searchPaths.push_back(std::wstring(programFiles) + L"\\Common Files\\VST3");
     }
     
-    // Common VST3 paths
-    wchar_t commonFiles[MAX_PATH];
-    if (SHGetFolderPathW(nullptr, CSIDL_PROGRAM_FILES_COMMON, nullptr, 0, commonFiles) == S_OK) {
-        searchPaths.push_back(std::wstring(commonFiles) + L"\\VST3");
+    wchar_t programFilesX86[MAX_PATH];
+    if (SHGetFolderPathW(nullptr, CSIDL_PROGRAM_FILESX86, nullptr, 0, programFilesX86) == S_OK) {
+        searchPaths.push_back(std::wstring(programFilesX86) + L"\\Common Files\\VST3");
+    }
+    
+    // User VST3 folder
+    wchar_t appData[MAX_PATH];
+    if (SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, appData) == S_OK) {
+        searchPaths.push_back(std::wstring(appData) + L"\\VST3");
     }
     
     // Start scanning in a separate thread
@@ -360,22 +363,26 @@ void OnScanPlugins() {
 }
 
 void OnLoadPlugin() {
-    // Get selected plugin
-    int selected = ListView_GetNextItem(g_hPluginList, -1, LVNI_SELECTED);
-    if (selected < 0 || selected >= g_availablePlugins.size()) {
-        return;
-    }
+    // Simple file open dialog
+    wchar_t filename[MAX_PATH] = L"";
     
-    const auto& pluginInfo = g_availablePlugins[selected];
+    OPENFILENAMEW ofn = { sizeof(OPENFILENAMEW) };
+    ofn.hwndOwner = g_hWnd;
+    ofn.lpstrFilter = L"VST3 Plugins\0*.vst3\0All Files\0*.*\0";
+    ofn.lpstrFile = filename;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
     
-    if (g_vstHost->loadPlugin(pluginInfo.path)) {
-        // Add to chain
-        g_vstHost->addPluginToChain(g_selectedPluginId);
-        
-        SetStatusText(L"Loaded: " + pluginInfo.name);
-        UpdatePluginList();
-    } else {
-        MessageBoxW(g_hWnd, L"Failed to load plugin", L"Error", MB_OK | MB_ICONERROR);
+    if (GetOpenFileNameW(&ofn)) {
+        int pluginId = g_vstHost->loadPlugin(filename);
+        if (pluginId > 0) {
+            g_selectedPluginId = pluginId;
+            g_vstHost->addPluginToChain(pluginId);
+            SetStatusText(L"Plugin loaded successfully");
+            UpdatePluginList();
+        } else {
+            MessageBoxW(g_hWnd, L"Failed to load plugin", L"Error", MB_OK | MB_ICONERROR);
+        }
     }
 }
 
@@ -384,17 +391,12 @@ void OnUnloadPlugin() {
         g_vstHost->unloadPlugin(g_selectedPluginId);
         g_selectedPluginId = -1;
         UpdatePluginList();
+        SetStatusText(L"Plugin unloaded");
     }
 }
 
 void OnStartAudio() {
-    HWND hDriverCombo = GetDlgItem(g_hWnd, ID_DRIVER_COMBO);
-    int driverIndex = (int)SendMessage(hDriverCombo, CB_GETCURSEL, 0, 0);
-    
-    EVH::AudioDriverType driverType = (driverIndex == 1) ? 
-        EVH::AudioDriverType::ASIO : EVH::AudioDriverType::WASAPI;
-    
-    if (g_vstHost->startAudio(driverType)) {
+    if (g_vstHost->startAudio(EVH::AudioDriverType::WASAPI)) {
         SetStatusText(L"Audio started");
     } else {
         MessageBoxW(g_hWnd, L"Failed to start audio", L"Error", MB_OK | MB_ICONERROR);
@@ -409,8 +411,29 @@ void OnStopAudio() {
 void UpdatePluginList() {
     ListView_DeleteAllItems(g_hPluginList);
     
-    // This would be populated from the scanned plugins
-    // For now, just show loaded plugins
+    // Get available plugins
+    g_availablePlugins = g_vstHost->getAvailablePlugins();
+    
+    // Add each plugin to the list
+    for (size_t i = 0; i < g_availablePlugins.size(); ++i) {
+        const auto& plugin = g_availablePlugins[i];
+        
+        LVITEM lvi = { 0 };
+        lvi.mask = LVIF_TEXT | LVIF_PARAM;
+        lvi.iItem = static_cast<int>(i);
+        lvi.lParam = static_cast<LPARAM>(i);
+        lvi.pszText = const_cast<LPWSTR>(plugin.name.c_str());
+        
+        int index = ListView_InsertItem(g_hPluginList, &lvi);
+        
+        ListView_SetItemText(g_hPluginList, index, 1, const_cast<LPWSTR>(plugin.vendor.c_str()));
+        
+        const wchar_t* typeStr = plugin.type == EVH::PluginType::VST3 ? L"VST3" : L"Unknown";
+        ListView_SetItemText(g_hPluginList, index, 2, const_cast<LPWSTR>(typeStr));
+        
+        const wchar_t* statusStr = plugin.validated ? L"OK" : L"Error";
+        ListView_SetItemText(g_hPluginList, index, 3, const_cast<LPWSTR>(statusStr));
+    }
 }
 
 void UpdateLog() {
@@ -424,9 +447,9 @@ void UpdateLog() {
     SetWindowTextW(g_hLogView, logText.c_str());
     
     // Scroll to bottom
-    int textLength = GetWindowTextLength(g_hLogView);
-    SendMessage(g_hLogView, EM_SETSEL, textLength, textLength);
-    SendMessage(g_hLogView, EM_SCROLLCARET, 0, 0);
+    int textLength = GetWindowTextLengthW(g_hLogView);
+    SendMessageW(g_hLogView, EM_SETSEL, textLength, textLength);
+    SendMessageW(g_hLogView, EM_SCROLLCARET, 0, 0);
 }
 
 void SetStatusText(const std::wstring& text) {
